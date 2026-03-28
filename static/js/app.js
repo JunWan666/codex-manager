@@ -61,6 +61,23 @@ function clearActiveTaskState() {
     sessionStorage.removeItem(ACTIVE_TASK_STORAGE_KEY);
 }
 
+function markUiBusy(mode) {
+    elements.startBtn.disabled = true;
+    elements.cancelBtn.disabled = false;
+
+    if (mode === 'single') {
+        elements.taskStatusBadge.style.display = 'inline-flex';
+    }
+}
+
+function renderRestoredBatchLogs(logs) {
+    if (!Array.isArray(logs)) return;
+    for (const log of logs) {
+        const logType = getLogType(log);
+        addLog(logType, log);
+    }
+}
+
 // DOM 元素
 const elements = {
     form: document.getElementById('registration-form'),
@@ -1499,7 +1516,37 @@ function initVisibilityReconnect() {
 
 // 页面加载时恢复进行中的任务（处理跨页面导航后回到注册页的情况）
 async function restoreActiveTask() {
-    const state = loadActiveTaskState();
+    let state = loadActiveTaskState();
+
+    if (!state) {
+        try {
+            const active = await api.get('/registration/active');
+            if (active.outlook_batch_task) {
+                state = {
+                    mode: 'outlook_batch',
+                    batch_id: active.outlook_batch_task.batch_id,
+                    total: active.outlook_batch_task.total,
+                };
+                saveActiveTask(state);
+            } else if (active.batch_task) {
+                state = {
+                    mode: 'batch',
+                    batch_id: active.batch_task.batch_id,
+                    total: active.batch_task.total,
+                };
+                saveActiveTask(state);
+            } else if (active.single_task) {
+                state = {
+                    mode: 'single',
+                    task_uuid: active.single_task.task_uuid,
+                };
+                saveActiveTask(state);
+            }
+        } catch (error) {
+            console.warn('获取活动任务状态失败:', error);
+        }
+    }
+
     if (!state) return;
 
     const { mode, task_uuid, batch_id, total } = state;
@@ -1519,11 +1566,10 @@ async function restoreActiveTask() {
             taskFinalStatus = null;
             toastShown = false;
             displayedLogs.clear();
-            elements.startBtn.disabled = true;
-            elements.cancelBtn.disabled = false;
+            markUiBusy('single');
             showTaskStatus(data);
             updateTaskStatus(data.status);
-            addLog('info', `[系统] 检测到进行中的任务，正在重连监控... (${task_uuid.substring(0, 8)})`);
+            addLog('info', `[系统] 已接管进行中的任务，正在恢复监控... (${task_uuid.substring(0, 8)})`);
             connectWebSocket(task_uuid);
         } catch {
             clearActiveTaskState();
@@ -1547,11 +1593,11 @@ async function restoreActiveTask() {
             batchFinalStatus = null;
             toastShown = false;
             displayedLogs.clear();
-            elements.startBtn.disabled = true;
-            elements.cancelBtn.disabled = false;
+            markUiBusy('batch');
             showBatchStatus({ count: total || data.total });
             updateBatchProgress(data);
-            addLog('info', `[系统] 检测到进行中的批量任务，正在重连监控... (${batch_id.substring(0, 8)})`);
+            renderRestoredBatchLogs(data.logs || []);
+            addLog('info', `[系统] 已接管进行中的批量任务，正在恢复监控... (${batch_id.substring(0, 8)})`);
             connectBatchWebSocket(batch_id);
         } catch {
             clearActiveTaskState();

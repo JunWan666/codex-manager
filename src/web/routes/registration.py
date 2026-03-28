@@ -121,7 +121,7 @@ class RegistrationTaskCreate(BaseModel):
 
 class BatchRegistrationRequest(BaseModel):
     """批量注册请求"""
-    count: int = 1
+    count: int = Field(default=1, ge=1, le=5000)
     email_service_type: str = "tempmail"
     proxy: Optional[str] = None
     email_service_config: Optional[dict] = None
@@ -1521,15 +1521,15 @@ async def start_batch_registration(
     """
     启动批量注册任务
 
-    - count: 注册数量 (1-100)
+    - count: 注册数量 (1-5000)
     - email_service_type: 邮箱服务类型
     - proxy: 代理地址
     - interval_min: 最小间隔秒数
     - interval_max: 最大间隔秒数
     """
     # 验证参数
-    if request.count < 1 or request.count > 100:
-        raise HTTPException(status_code=400, detail="注册数量必须在 1-100 之间")
+    if request.count < 1 or request.count > 5000:
+        raise HTTPException(status_code=400, detail="注册数量必须在 1-5000 之间")
 
     try:
         EmailServiceType(request.email_service_type)

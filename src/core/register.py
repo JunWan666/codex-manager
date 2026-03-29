@@ -986,6 +986,54 @@ class RegistrationEngine:
 
         return None
 
+    def _log_workspace_debug_snapshot(
+        self,
+        response: Optional[Any] = None,
+        html: Optional[str] = None,
+        url: Optional[str] = None,
+        reason: str = "",
+    ) -> None:
+        """在 Workspace ID 提取失败时输出调试快照，便于直接从控制台查看页面内容。"""
+        try:
+            current_url = str(url or getattr(response, "url", "") or "").strip()
+            body = html if html is not None else str(getattr(response, "text", "") or "")
+            status_code = getattr(response, "status_code", None)
+
+            self._log(f"[Workspace调试] 提取失败原因: {reason or 'unknown'}", "warning")
+            if status_code is not None:
+                self._log(f"[Workspace调试] 响应状态: {status_code}", "warning")
+            if current_url:
+                self._log(f"[Workspace调试] 当前 URL: {current_url[:500]}", "warning")
+
+            cookie_names = (
+                "oai-client-auth-session",
+                "oai_client_auth_session",
+                "oai-client-auth-info",
+                "oai_client_auth_info",
+            )
+            cookie_summary = []
+            for cookie_name in cookie_names:
+                cookie_value = self.session.cookies.get(cookie_name) if self.session else None
+                if cookie_value:
+                    cookie_summary.append(f"{cookie_name}=present(len={len(cookie_value)})")
+                else:
+                    cookie_summary.append(f"{cookie_name}=missing")
+            self._log(f"[Workspace调试] 授权 Cookie: {'; '.join(cookie_summary)}", "warning")
+
+            if body:
+                compact = body.replace("\r", "")
+                snippet = compact[:4000]
+                self._log("[Workspace调试] 页面片段开始 >>>", "warning")
+                for line in snippet.split("\n"):
+                    self._log(f"[Workspace调试] {line[:500]}", "warning")
+                if len(compact) > len(snippet):
+                    self._log(f"[Workspace调试] ...(已截断，原始长度 {len(compact)} 字符)", "warning")
+                self._log("[Workspace调试] 页面片段结束 <<<", "warning")
+            else:
+                self._log("[Workspace调试] 页面正文为空", "warning")
+        except Exception as e:
+            self._log(f"[Workspace调试] 输出调试快照失败: {e}", "warning")
+
     def _select_workspace(self, workspace_id: str) -> Optional[str]:
         """选择 Workspace"""
         try:
@@ -1334,6 +1382,12 @@ class RegistrationEngine:
             workspace_id = self._extract_workspace_id_from_response(response=auth_response, html=html, url=current_url)
             if not workspace_id:
                 self._log("consent 页面缺少 workspace_id，回退到 Cookie 解析路径", "warning")
+                self._log_workspace_debug_snapshot(
+                    response=auth_response,
+                    html=html,
+                    url=current_url,
+                    reason="consent 页面返回 200 但未提取到 workspace_id",
+                )
                 return None, None
 
             continue_url = self._select_workspace(workspace_id)
@@ -1586,6 +1640,9 @@ class RegistrationEngine:
                 self._emit_status("workspace_extract", "从授权态提取 Workspace ID", step_index=next_step)
                 workspace_id = self._get_workspace_id()
                 if not workspace_id:
+                    self._log_workspace_debug_snapshot(
+                        reason="授权态提取 workspace_id 失败（Cookie / 页面 / URL 均未命中）",
+                    )
                     result.error_message = "获取 Workspace ID 失败"
                     return result
 

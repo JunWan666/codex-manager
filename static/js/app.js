@@ -35,6 +35,7 @@ let wsHeartbeatInterval = null;  // 心跳定时器
 let batchWsHeartbeatInterval = null;  // 批量任务心跳定时器
 let activeTaskUuid = null;   // 当前活跃的单任务 UUID（用于页面重新可见时重连）
 let activeBatchId = null;    // 当前活跃的批量任务 ID（用于页面重新可见时重连）
+let clearLocalConfirmTimeout = null;  // 清理本地按钮二次确认计时器
 
 // DOM 元素
 const elements = {
@@ -269,9 +270,29 @@ function initEventListeners() {
     // 清理本地状态并刷新
     if (elements.clearLocalBtn) {
         elements.clearLocalBtn.addEventListener('click', async () => {
-            const confirmed = confirm('这会清理当前站点的 Cookie、本地存储、会话存储、缓存和 IndexedDB，并立即刷新页面。确定继续吗？');
-            if (!confirmed) return;
-            await clearLocalSiteDataAndReload();
+            if (elements.clearLocalBtn.dataset.confirming === 'true') {
+                elements.clearLocalBtn.disabled = true;
+                elements.clearLocalBtn.textContent = '清理中...';
+                await clearLocalSiteDataAndReload();
+                return;
+            }
+
+            elements.clearLocalBtn.dataset.confirming = 'true';
+            elements.clearLocalBtn.textContent = '再次点击确认清理';
+            elements.clearLocalBtn.classList.add('btn-warning');
+            toast.warning('再次点击“再次点击确认清理”即可清空当前站点本地数据并刷新');
+
+            if (clearLocalConfirmTimeout) {
+                clearTimeout(clearLocalConfirmTimeout);
+            }
+            clearLocalConfirmTimeout = setTimeout(() => {
+                if (elements.clearLocalBtn) {
+                    elements.clearLocalBtn.dataset.confirming = 'false';
+                    elements.clearLocalBtn.textContent = '清理本地并刷新';
+                    elements.clearLocalBtn.classList.remove('btn-warning');
+                }
+                clearLocalConfirmTimeout = null;
+            }, 5000);
         });
     }
 

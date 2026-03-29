@@ -644,8 +644,8 @@ async function handleSingleRegistration(requestData) {
 
         currentTask = data;
         activeTaskUuid = data.task_uuid;  // 保存用于重连
-        // 持久化到 sessionStorage，跨页面导航后可恢复
-        sessionStorage.setItem('activeTask', JSON.stringify({ task_uuid: data.task_uuid, mode: 'single' }));
+        // 持久化到本地，跨标签页/重开页面后可恢复
+        saveActiveTask({ task_uuid: data.task_uuid, mode: 'single' });
         addLog('info', `[系统] 任务已创建: ${data.task_uuid}`);
         showTaskStatus(data);
         updateTaskStatus('running');
@@ -661,8 +661,7 @@ async function handleSingleRegistration(requestData) {
 }
 
 
-// ============== WebSocket 功能 ==============
-
+// ============== WebSocket 功能 =======
 // 连接 WebSocket
 function connectWebSocket(taskUuid) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -820,8 +819,8 @@ async function handleBatchRegistration(requestData) {
 
         currentBatch = data;
         activeBatchId = data.batch_id;  // 保存用于重连
-        // 持久化到 sessionStorage，跨页面导航后可恢复
-        sessionStorage.setItem('activeTask', JSON.stringify({ batch_id: data.batch_id, mode: 'batch', total: data.count }));
+        // 持久化到本地，跨标签页/重开页面后可恢复
+        saveActiveTask({ batch_id: data.batch_id, mode: 'batch', total: data.count });
         addLog('info', `[系统] 批量任务已创建: ${data.batch_id}`);
         addLog('info', `[系统] 共 ${data.count} 个任务已加入队列`);
         showBatchStatus(data);
@@ -963,6 +962,17 @@ function startBatchPolling(batchId) {
             const data = await api.get(`/registration/batch/${batchId}`);
             updateBatchProgress(data);
 
+            // 输出批量历史日志（用于 WebSocket 断开或页面恢复后的补偿）
+            if (data.logs && data.logs.length > 0) {
+                const lastLogIndex = batchPollingInterval.lastLogIndex || 0;
+                for (let i = lastLogIndex; i < data.logs.length; i++) {
+                    const log = data.logs[i];
+                    const logType = getLogType(log);
+                    addLog(logType, log);
+                }
+                batchPollingInterval.lastLogIndex = data.logs.length;
+            }
+
             // 检查是否完成
             if (data.finished) {
                 stopBatchPolling();
@@ -985,6 +995,8 @@ function startBatchPolling(batchId) {
             console.error('轮询批量状态失败:', error);
         }
     }, 2000);
+
+    batchPollingInterval.lastLogIndex = 0;
 }
 
 // 停止轮询批量状态
@@ -1200,7 +1212,7 @@ function resetButtons() {
     // 清除活跃任务标识
     activeTaskUuid = null;
     activeBatchId = null;
-    // 清除 sessionStorage 持久化状态
+    // 清除持久化状态
     clearActiveTaskState();
     // 断开 WebSocket
     disconnectWebSocket();
@@ -1217,8 +1229,7 @@ function escapeHtml(text) {
 }
 
 
-// ============== Outlook 批量注册功能 ==============
-
+// ============== Outlook 批量注册功能 =======
 // 加载 Outlook 账户列表
 async function loadOutlookAccounts() {
     try {
@@ -1349,8 +1360,8 @@ async function handleOutlookBatchRegistration() {
 
         currentBatch = { batch_id: data.batch_id, ...data };
         activeBatchId = data.batch_id;  // 保存用于重连
-        // 持久化到 sessionStorage，跨页面导航后可恢复
-        sessionStorage.setItem('activeTask', JSON.stringify({ batch_id: data.batch_id, mode: isOutlookBatchMode ? 'outlook_batch' : 'batch', total: data.to_register }));
+        // 持久化到本地，跨标签页/重开页面后可恢复
+        saveActiveTask({ batch_id: data.batch_id, mode: isOutlookBatchMode ? 'outlook_batch' : 'batch', total: data.to_register });
         addLog('info', `[系统] 批量任务已创建: ${data.batch_id}`);
         addLog('info', `[系统] 总数: ${data.total}, 跳过已注册: ${data.skipped}, 待注册: ${data.to_register}`);
 
@@ -1367,8 +1378,7 @@ async function handleOutlookBatchRegistration() {
     }
 }
 
-// ============== 批量任务 WebSocket 功能 ==============
-
+// ============== 批量任务 WebSocket 功能 =======
 // 连接批量任务 WebSocket
 function connectBatchWebSocket(batchId) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1559,8 +1569,7 @@ function startOutlookBatchPolling(batchId) {
     batchPollingInterval.lastLogIndex = 0;
 }
 
-// ============== 页面可见性重连机制 ==============
-
+// ============== 页面可见性重连机制 =======
 function initVisibilityReconnect() {
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState !== 'visible') return;

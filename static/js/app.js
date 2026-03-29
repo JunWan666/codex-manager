@@ -103,9 +103,6 @@ const elements = {
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
-    handleModeChange({ target: elements.regMode });
-    handleConcurrencyModeChange(elements.concurrencyMode, elements.concurrencyHint, elements.intervalGroup);
-    handleConcurrencyModeChange(elements.outlookConcurrencyMode, elements.outlookConcurrencyHint, elements.outlookIntervalGroup);
     loadAvailableServices();
     loadRecentAccounts();
     startAccountsPolling();

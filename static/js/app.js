@@ -53,6 +53,7 @@ const elements = {
     batchProgressSection: document.getElementById('batch-progress-section'),
     consoleLog: document.getElementById('console-log'),
     clearLogBtn: document.getElementById('clear-log-btn'),
+    clearLocalBtn: document.getElementById('clear-local-btn'),
     // 任务状态
     taskId: document.getElementById('task-id'),
     taskEmail: document.getElementById('task-email'),
@@ -121,6 +122,62 @@ async function initAutoUploadOptions() {
         loadServiceSelect('/tm-services?enabled=true', elements.tmServiceSelect, elements.autoUploadTm, elements.tmServiceSelectGroup),
         loadServiceSelect('/newapi-services?enabled=true', elements.newapiServiceSelect, elements.autoUploadNewapi, elements.newapiServiceSelectGroup),
     ]);
+}
+
+async function clearLocalSiteDataAndReload() {
+    try {
+        addLog('warning', '[系统] 正在清理当前站点本地数据...');
+    } catch {}
+
+    try {
+        localStorage.clear();
+    } catch {}
+
+    try {
+        sessionStorage.clear();
+    } catch {}
+
+    try {
+        const cookies = document.cookie ? document.cookie.split(';') : [];
+        const hostname = window.location.hostname;
+        const domainParts = hostname.split('.');
+        const candidateDomains = new Set(['', hostname]);
+        for (let i = 0; i < domainParts.length - 1; i++) {
+            candidateDomains.add('.' + domainParts.slice(i).join('.'));
+        }
+
+        for (const cookie of cookies) {
+            const eqPos = cookie.indexOf('=');
+            const name = (eqPos > -1 ? cookie.slice(0, eqPos) : cookie).trim();
+            if (!name) continue;
+
+            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+            for (const domain of candidateDomains) {
+                document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=${domain}`;
+            }
+        }
+    } catch {}
+
+    try {
+        if (window.indexedDB && indexedDB.databases) {
+            const dbs = await indexedDB.databases();
+            await Promise.all((dbs || []).map(db => db && db.name ? new Promise(resolve => {
+                const req = indexedDB.deleteDatabase(db.name);
+                req.onsuccess = req.onerror = req.onblocked = () => resolve();
+            }) : Promise.resolve()));
+        }
+    } catch {}
+
+    try {
+        if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map(name => caches.delete(name)));
+        }
+    } catch {}
+
+    setTimeout(() => {
+        window.location.reload();
+    }, 150);
 }
 
 // 通用：构建自定义多选下拉组件并处理联动
@@ -211,6 +268,15 @@ function initEventListeners() {
         elements.consoleLog.innerHTML = '<div class="log-line info">[系统] 日志已清空</div>';
         displayedLogs.clear();  // 清空日志去重集合
     });
+
+    // 清理本地状态并刷新
+    if (elements.clearLocalBtn) {
+        elements.clearLocalBtn.addEventListener('click', async () => {
+            const confirmed = confirm('这会清理当前站点的 Cookie、本地存储、会话存储、缓存和 IndexedDB，并立即刷新页面。确定继续吗？');
+            if (!confirmed) return;
+            await clearLocalSiteDataAndReload();
+        });
+    }
 
     // 刷新账号列表
     elements.refreshAccountsBtn.addEventListener('click', () => {

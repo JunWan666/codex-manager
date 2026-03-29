@@ -185,6 +185,13 @@ class TaskListResponse(BaseModel):
     tasks: List[RegistrationTaskResponse]
 
 
+class ActiveTaskStateResponse(BaseModel):
+    """当前活动任务状态响应"""
+    single_task: Optional[RegistrationTaskResponse] = None
+    batch_task: Optional[Dict[str, Any]] = None
+    outlook_batch_task: Optional[Dict[str, Any]] = None
+
+
 # ============== Outlook 批量注册模型 ==============
 
 class OutlookAccountForRegistration(BaseModel):
@@ -1645,6 +1652,43 @@ async def list_tasks(
             total=total,
             tasks=[task_to_response(t) for t in tasks]
         )
+
+
+@router.get("/active", response_model=ActiveTaskStateResponse)
+async def get_active_task_state():
+    """获取当前活动中的任务状态（用于页面恢复与接管监控）"""
+    with get_db() as db:
+        single_task = db.query(RegistrationTask).filter(
+            RegistrationTask.status.in_(["pending", "running"])
+        ).order_by(RegistrationTask.created_at.desc()).first()
+
+    active_batches = task_manager.list_active_batches()
+    batch_task = None
+    outlook_batch_task = None
+
+    def _serialize_batch(batch_id: str, snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        data = snapshot.copy()
+        data["batch_id"] = batch_id
+        data["logs"] = task_manager.get_batch_logs(batch_id)
+        return data
+
+    for batch_id, snapshot in sorted(
+        active_batches.items(),
+        key=lambda item: item[1].get("current_index", 0),
+        reverse=True,
+    ):
+        if snapshot.get("service_ids"):
+            if outlook_batch_task is None:
+                outlook_batch_task = _serialize_batch(batch_id, snapshot)
+        else:
+            if batch_task is None:
+                batch_task = _serialize_batch(batch_id, snapshot)
+
+    return ActiveTaskStateResponse(
+        single_task=task_to_response(single_task) if single_task else None,
+        batch_task=batch_task,
+        outlook_batch_task=outlook_batch_task,
+    )
 
 
 @router.get("/tasks/{task_uuid}", response_model=RegistrationTaskResponse)

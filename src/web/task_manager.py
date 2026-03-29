@@ -342,6 +342,19 @@ class TaskManager:
             status = _batch_status.get(batch_id)
             return status.copy() if status is not None else None
 
+    def list_active_batches(self) -> Dict[str, dict]:
+        """列出所有未完成的批量任务状态快照"""
+        active: Dict[str, dict] = {}
+        with _meta_lock:
+            batch_ids = list(_batch_status.keys())
+        for batch_id in batch_ids:
+            with _get_batch_lock(batch_id):
+                status = _batch_status.get(batch_id)
+                if not status or status.get("finished"):
+                    continue
+                active[batch_id] = status.copy()
+        return active
+
     def get_batch_logs(self, batch_id: str) -> List[str]:
         """获取批量任务日志"""
         with _get_batch_lock(batch_id):
